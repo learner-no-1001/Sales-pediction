@@ -10,7 +10,21 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import openpyxl
 
-st.title("📊 Sales Prediction & Visualization")
+st.title("Sales Prediction & Visualization")
+
+# ----------------- Show Rules -----------------
+st.markdown("""
+*⚠️ Please follow these rules before uploading your file:*
+
+1. File must be *CSV or Excel (.xlsx)*.  
+2. Required columns: product, price, quantity, date, age, gender, location.  
+3. Extra columns are not being considered.  
+4. Ensure numeric columns (price, quantity, age, date) do not contain text.  
+5. Avoid having too much similar columns (like product catagory, item, or location, state etc)
+6. Date :dd/mm/yyyy
+7. Limit 200MB
+""")
+
 
 # ----------------- File Upload -----------------
 uploaded_file = st.file_uploader("Upload your CSV or Excel", type=["csv", "xlsx"])
@@ -98,7 +112,7 @@ if uploaded_file:
     mse = mean_squared_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
 
-    st.subheader("📈 Model Performance")
+    st.subheader("Model Performance")
     st.write("Mean Squared Error:", mse)
     st.write("R-squared:", r2)
 
