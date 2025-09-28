@@ -10,8 +10,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import openpyxl
 
-
-st.title("📊 Sales Prediction & Presentation")
+st.title("📊 Sales Prediction & Visualization")
 
 # ----------------- File Upload -----------------
 uploaded_file = st.file_uploader("Upload your CSV or Excel", type=["csv", "xlsx"])
@@ -25,9 +24,9 @@ if uploaded_file:
     st.write(user_data.head())
 
     # ----------------- Data Cleaning -----------------
+    # Drop columns with all unique or single values
     for col in user_data.columns:
-        unique_count = user_data[col].nunique()
-        if unique_count == len(user_data) or unique_count == 1:
+        if user_data[col].nunique() in [1, len(user_data)]:
             user_data = user_data.drop(columns=[col])
 
     user_data.columns = user_data.columns.str.strip().str.lower()
@@ -82,8 +81,8 @@ if uploaded_file:
     # ----------------- Train/Test Split -----------------
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # ----------------- Cached Model Training -----------------
-    @st.cache_data
+    # ----------------- Cached Model Loading/Training -----------------
+    @st.cache_resource
     def train_model(X_train, y_train):
         rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
         rf_model.fit(X_train, y_train)
@@ -91,15 +90,11 @@ if uploaded_file:
 
     rf_model = train_model(X_train, y_train)
 
-    # ----------------- Cached Prediction -----------------
-    @st.cache_data
-    def predict_quantity(model, X):
-        return model.predict(X)
-
-    user_data["Predicted_quantity"] = predict_quantity(rf_model, X)
+    # ----------------- Predictions -----------------
+    user_data["Predicted_quantity"] = rf_model.predict(X)
+    y_pred = rf_model.predict(X_test)
 
     # ----------------- Model Evaluation -----------------
-    y_pred = predict_quantity(rf_model, X_test)
     mse = mean_squared_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
 
@@ -107,86 +102,64 @@ if uploaded_file:
     st.write("Mean Squared Error:", mse)
     st.write("R-squared:", r2)
 
-    # ----------------- Cached Plots -----------------
-    @st.cache_data
-    def create_product_demand_plot(user_data):
-        product_summary = user_data.groupby('predicted_product')['Predicted_quantity'].sum().sort_values(ascending=False)
-        fig, ax = plt.subplots(figsize=(7,4))
-        sns.barplot(x=product_summary.index, y=product_summary.values, palette="viridis", ax=ax)
-        ax.set_title("Predicted Product Demand")
-        ax.set_ylabel("Total Quantity")
-        ax.set_xlabel("Product")
-        ax.tick_params(axis='x', rotation=45)
-        return fig
-
-    # Map products back for labels
+    # ----------------- Product Demand Plot -----------------
     inverse_product_map = {v: k for k, v in column_mappings['product'].items()}
     user_data['predicted_product'] = user_data['product'].map(inverse_product_map)
 
     st.subheader("🔹 Predicted Product Demand")
-    st.pyplot(create_product_demand_plot(user_data))
+    product_summary = user_data.groupby('predicted_product')['Predicted_quantity'].sum().sort_values(ascending=False)
+    fig, ax = plt.subplots(figsize=(7,4))
+    sns.barplot(x=product_summary.index, y=product_summary.values, palette="viridis", ax=ax)
+    ax.set_title("Predicted Product Demand")
+    ax.set_ylabel("Total Quantity")
+    ax.set_xlabel("Product")
+    ax.tick_params(axis='x', rotation=45)
+    st.pyplot(fig)
 
-    # ----------------- Visualization 2: Age Groups -----------------
+    # ----------------- Age Group Pie Chart -----------------
     bins = [0, 18, 25, 35, 45, 55, 65, 100]
     labels = ['0-18', '18-25', '25-35', '35-45', '45-55', '55-65', '65+']
     user_data['age_group'] = pd.cut(user_data['age'], bins=bins, labels=labels, right=False)
     age_group_summary = user_data.groupby('age_group')['Predicted_quantity'].sum()
 
-    @st.cache_data
-    def create_age_group_pie(age_group_summary):
-        fig2, ax2 = plt.subplots(figsize=(5,5))
-        ax2.pie(
-            age_group_summary,
-            labels=age_group_summary.index,
-            autopct='%1.1f%%',
-            startangle=90,
-            pctdistance=1.1,
-            labeldistance=1.2
-        )
-        ax2.set_title("Predicted Quantity by Age Group")
-        return fig2
-
     st.subheader("🔹 Predicted Quantity by Age Group")
-    st.pyplot(create_age_group_pie(age_group_summary))
+    fig2, ax2 = plt.subplots(figsize=(5,5))
+    ax2.pie(age_group_summary, labels=age_group_summary.index, autopct='%1.1f%%', startangle=90)
+    ax2.set_title("Predicted Quantity by Age Group")
+    st.pyplot(fig2)
 
-    # ----------------- Visualization 3: Monthly Demand -----------------
+    # ----------------- Monthly Demand -----------------
     all_months = range(1, 13)
     all_products = user_data['predicted_product'].unique()
     full_index = pd.MultiIndex.from_product([all_months, all_products], names=["month", "predicted_product"])
     monthly_demand = user_data.groupby(["month", "predicted_product"])["Predicted_quantity"] \
         .sum().reindex(full_index, fill_value=0).reset_index()
 
-    @st.cache_data
-    def create_monthly_line(monthly_demand):
-        fig3, ax3 = plt.subplots(figsize=(10,6))
-        sns.lineplot(data=monthly_demand, x="month", y="Predicted_quantity",
-                     hue="predicted_product", marker="o", ax=ax3)
-        ax3.set_title("Monthly Demand by Product")
-        ax3.set_xlabel("Month")
-        ax3.set_ylabel("Predicted Quantity")
-        ax3.set_xticks(list(all_months))
-        ax3.set_xticklabels([calendar.month_abbr[m] for m in all_months])
-        return fig3
-
     st.subheader("🔹 Monthly Demand by Product")
-    st.pyplot(create_monthly_line(monthly_demand))
+    fig3, ax3 = plt.subplots(figsize=(10,6))
+    sns.lineplot(data=monthly_demand, x="month", y="Predicted_quantity",
+                 hue="predicted_product", marker="o", ax=ax3)
+    ax3.set_title("Monthly Demand by Product")
+    ax3.set_xlabel("Month")
+    ax3.set_ylabel("Predicted Quantity")
+    ax3.set_xticks(list(all_months))
+    ax3.set_xticklabels([calendar.month_abbr[m] for m in all_months])
+    st.pyplot(fig3)
 
-    # ----------------- Visualization 4: Location vs Product -----------------
+    # ----------------- Location vs Product -----------------
     inverse_location_map = {v: k for k, v in column_mappings['location'].items()}
     user_data['location_name'] = user_data['location'].map(inverse_location_map)
     top_location_products = user_data.groupby(['location_name','predicted_product'])['Predicted_quantity'] \
         .sum().reset_index()
 
-    @st.cache_data
-    def create_location_bar(top_location_products):
-        fig4, ax4 = plt.subplots(figsize=(12,6))
-        sns.barplot(data=top_location_products, x='location_name',
-                    y='Predicted_quantity', hue='predicted_product', ax=ax4)
-        ax4.set_title("Predicted Product Quantity by Location")
-        ax4.set_xlabel("Location")
-        ax4.set_ylabel("Total Predicted Quantity")
-        ax4.tick_params(axis='x', rotation=45)
-        return fig4
-
     st.subheader("🔹 Predicted Product Quantity by Location")
-    st.pyplot(create_location_bar(top_location_products))
+    fig4, ax4 = plt.subplots(figsize=(12,6))
+    sns.barplot(data=top_location_products, x='location_name',
+                y='Predicted_quantity', hue='predicted_product', ax=ax4)
+    ax4.set_title("Predicted Product Quantity by Location")
+    ax4.set_xlabel("Location")
+    ax4.set_ylabel("Total Predicted Quantity")
+    ax4.tick_params(axis='x', rotation=45)
+    st.pyplot(fig4)
+
+   
